@@ -1,5 +1,7 @@
 const Post = require('../model/Post')
 const bcrypt = require('bcrypt')
+const User = require('../model/User')
+const mongoose = require('mongoose')
 
 const getAllPost = async(req, res, next) => {
     let posts
@@ -29,6 +31,16 @@ const addPost = async(req, res, next) => {
     ) {
         return res.status(422).json({ message: "Invalid data" })
     }
+    let oldUser
+    try {
+        oldUser = await User.findById(user)
+    } catch (err) {
+        return console.log(err)
+    }
+
+    if (!oldUser) {
+        return res.status(404).json({ message: "User not found" })
+    }
 
 
     let post
@@ -42,7 +54,14 @@ const addPost = async(req, res, next) => {
             image,
             user
         })
-        await post.save()
+
+        const session = await mongoose.startSession()
+        session.startTransaction()
+        oldUser.posts.push(post)
+        await oldUser.save({ session })
+        post = await post.save()
+        session.commitTransaction()
+
     } catch (err) {
         console.log('Error while adding post', err)
     }
@@ -90,7 +109,13 @@ const deletePost = async(req, res, next) => {
     const id = req.params.id
     let post
     try {
+        const session = await mongoose.startSession()
+        session.startTransaction()
+        post = await Post.findById(id).populate("user")
+        post.user.posts.pull(post)
+        await post.user.save({ session })
         post = await Post.findByIdAndRemove(id)
+        session.commitTransaction()
 
     } catch (err) {
         return console.log('Error while getting post by id', err)
